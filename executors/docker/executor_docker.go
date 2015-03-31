@@ -24,9 +24,13 @@ type DockerExecutor struct {
 	services  []*docker.Container
 }
 
-func (s *DockerExecutor) volumeDir(cacheDir string, projectName string, volume string) string {
+func (s *DockerExecutor) volumeDir(cacheDir string, projectName string, volume string, dynamic bool) string {
 	hash := md5.Sum([]byte(volume))
-	return fmt.Sprintf("%s/%s/%x", cacheDir, projectName, hash)
+	if dynamic {
+		return fmt.Sprintf("%s/%v", cacheDir, hash)
+	} else {
+		return fmt.Sprintf("%s/%s/%v", cacheDir, projectName, hash)
+	}
 }
 
 func (s *DockerExecutor) getImage(imageName string, pullImage bool) (*docker.Image, error) {
@@ -54,19 +58,64 @@ func (s *DockerExecutor) getImage(imageName string, pullImage bool) (*docker.Ima
 	return s.client.InspectImage(imageName)
 }
 
-func (s *DockerExecutor) addVolume(binds *[]string, cacheDir string, volume string) {
-	volumeDir := s.volumeDir(cacheDir, s.Build.ProjectUniqueName(), volume)
+func (s *DockerExecutor) addVolume(binds *[]string, cacheDir string, volume string, dynamic bool) {
+	volumeDir := s.volumeDir(cacheDir, s.Build.ProjectUniqueName(), volume, dynamic)
 	*binds = append(*binds, fmt.Sprintf("%s:%s:rw", volumeDir, volume))
 	s.Debugln("Using", volumeDir, "for", volume, "...")
 
-	// TODO: this is potentially insecure
-	os.MkdirAll(volumeDir, 0777)
+	// TODO: what to do with this?
+	if !dynamic {
+		os.MkdirAll(volumeDir, 0777)
+	}
 }
 
 func (s *DockerExecutor) createVolumes(image *docker.Image, buildsDir string) ([]string, error) {
-	cacheDir := "tmp/docker-cache"
-	if len(s.Config.Docker.CacheDir) != 0 {
-		cacheDir = s.Config.Docker.CacheDir
+	cacheDir := s.Config.Docker.CacheDir
+	dynamic := false
+
+	if cacheDir == "" {
+		// get existing cache container
+		containerName := s.Build.ProjectUniqueName() + "-data-cache"
+		container, err := s.client.InspectContainer(containerName)
+
+		if err != nil {
+			// get busybox image
+			cacheImage, err := s.getImage("busybox:latest", true)
+			if err != nil {
+				return nil, err
+			}
+
+			// create new cache container for that project
+			createContainerOptions := docker.CreateContainerOptions{
+				Name: containerName,
+				Config: &docker.Config{
+					Image: cacheImage.ID,
+					Cmd: []string{
+						"/bin/true",
+					},
+					Volumes: map[string]struct{}{
+						"/data": {},
+					},
+				},
+				HostConfig: &docker.HostConfig{},
+			}
+
+			container, err = s.client.CreateContainer(createContainerOptions)
+			if err != nil {
+				if container != nil {
+					go s.removeContainer(container.ID)
+				}
+				return nil, err
+			}
+		}
+
+		// check if we have /data path
+		cacheDir = container.Volumes["/data"]
+		if cacheDir == "" {
+			return nil, nil
+		}
+
+		dynamic = true
 	}
 
 	cacheDir, err := filepath.Abs(cacheDir)
@@ -77,17 +126,17 @@ func (s *DockerExecutor) createVolumes(image *docker.Image, buildsDir string) ([
 	var binds []string
 
 	for _, volume := range s.Config.Docker.Volumes {
-		s.addVolume(&binds, cacheDir, volume)
+		s.addVolume(&binds, cacheDir, volume, dynamic)
 	}
 
 	if image != nil {
 		for volume := range image.Config.Volumes {
-			s.addVolume(&binds, cacheDir, volume)
+			s.addVolume(&binds, cacheDir, volume, dynamic)
 		}
 	}
 
 	if s.Build.AllowGitFetch {
-		s.addVolume(&binds, cacheDir, buildsDir)
+		s.addVolume(&binds, cacheDir, buildsDir, dynamic)
 	}
 
 	return binds, nil
