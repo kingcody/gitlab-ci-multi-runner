@@ -1,0 +1,13 @@
+runner:
+  image: ayufan/gitlab-ci-multi-runner:latest
+  # Uncomment the lines below to use docker executor
+  #volumes:
+  #  - /var/run/docker.sock:/var/run/docker.sock
+  volumes_from:
+    - data
+
+data:
+  image: busybox:latest
+  command: /bin/true
+  volumes:
+    - /data

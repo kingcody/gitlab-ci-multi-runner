@@ -221,6 +221,43 @@ This project was made as Go learning opportunity. The initial release was create
   ```
   **note**: you need to use the same method for mounting you data volume as you did originally (`-v /PATH/TO/DATA/FOLDER:/data` or `--volumes-from multi-runner-data`)
 
+#### Docker Compose (or Fig)
+
+> Compose is a tool for defining and running complex applications with Docker. With Compose, you define a multi-container application in a single file, then spin your application up in a single command which does everything that needs to be done to get it running.
+
+Check out https://docs.docker.com/compose for more information on how to get started with Docker Compose.
+
+1. Start the runner:
+  ```bash
+  $ docker-compose up -d
+  ```
+
+1. Setup the runner:
+  ```bash
+  $ docker-compose run runner setup
+  Please enter the gitlab-ci coordinator URL (e.g. http://gitlab-ci.org:3000/ )
+  https://ci.gitlab.org/
+  Please enter the gitlab-ci token for this runner
+  xxx
+  Please enter the gitlab-ci description for this runner
+  my-runner
+  INFO[0034] fcf5c619 Registering runner... succeeded
+  Please enter the executor: shell, docker, docker-ssh, ssh?
+  docker
+  Please enter the Docker image (eg. ruby:2.1):
+  ruby:2.1
+  INFO[0037] Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded!
+  ```
+
+#### Update with Docker Compose
+
+1. Update and rebuild:
+
+  ```bash
+  $ docker pull ayufan/gitlab-ci-multi-runner:latest && \
+    docker-compose up -d
+  ```
+
 #### Installing Trusted SSL Server Certificates
 
 If your GitLab CI server is using self-signed SSL certificates then you should make sure the GitLab CI server certificate is trusted by the gitlab-ci-multi-runner container for them to be able to talk to each other.
